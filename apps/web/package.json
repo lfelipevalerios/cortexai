@@ -10,14 +10,14 @@
   },
   "dependencies": {
     "@cortex/schemas": "workspace:*",
-    "@cortex/seed": "workspace:*",
     "@cortex/ui": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "next": "15.5.4",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@tanstack/react-query": "^5.62.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

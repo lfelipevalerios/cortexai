@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FileText, Paperclip, Plus, type LucideIcon } from 'lucide-react';
-import type { NodeContent } from '@cortex/schemas';
+import type { TreeNode } from '@cortex/schemas';
+
+export type ContentInfo = Pick<TreeNode, 'body' | 'fileCount'>;
 import { cx } from '@/components/ui';
 
 export type Tone = 'green' | 'purple' | 'lilac';
@@ -56,7 +58,7 @@ export function Orbit({ center, items }: { center: ReactNode; items: OrbitItem[]
   return (
     <div ref={ref} className="relative h-full w-full overflow-auto">
       {narrow ? (
-        <div className="flex flex-col items-center gap-3 p-4">
+        <div className="flex flex-col items-center gap-3 p-4 pb-16">
           {center}
           {items.map((it) => (
             <div key={it.key} className="w-full max-w-xs">{it.node}</div>
@@ -86,9 +88,9 @@ export function Orbit({ center, items }: { center: ReactNode; items: OrbitItem[]
 }
 
 /** Mostra se o nó já tem texto e arquivos. */
-export function ContentBadges({ content }: { content: NodeContent }) {
-  const hasText = content.text.trim().length > 0;
-  if (!hasText && content.files.length === 0) return <span className="text-[11px] text-text-muted/70">vazio</span>;
+export function ContentBadges({ content }: { content: ContentInfo }) {
+  const hasText = content.body.trim().length > 0;
+  if (!hasText && content.fileCount === 0) return <span className="text-[11px] text-text-muted/70">vazio</span>;
   return (
     <span className="flex items-center gap-2 text-[11px] text-text-muted">
       {hasText && (
@@ -96,9 +98,9 @@ export function ContentBadges({ content }: { content: NodeContent }) {
           <FileText className="h-3 w-3" /> texto
         </span>
       )}
-      {content.files.length > 0 && (
+      {content.fileCount > 0 && (
         <span className="flex items-center gap-1">
-          <Paperclip className="h-3 w-3" /> {content.files.length}
+          <Paperclip className="h-3 w-3" /> {content.fileCount}
         </span>
       )}
     </span>
@@ -106,7 +108,7 @@ export function ContentBadges({ content }: { content: NodeContent }) {
 }
 
 export function CenterNode({ icon: Icon, label, title, subtitle, tone, content, active, onClick }: {
-  icon: LucideIcon; label: string; title: string; subtitle?: string; tone: Tone; content: NodeContent; active: boolean; onClick: () => void;
+  icon: LucideIcon; label: string; title: string; subtitle?: string; tone: Tone; content: ContentInfo; active: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -133,7 +135,7 @@ export function CenterNode({ icon: Icon, label, title, subtitle, tone, content, 
 }
 
 export function OrbitNode({ icon: Icon, label, title, subtitle, tone, content, active, onClick }: {
-  icon: LucideIcon; label: string; title: string; subtitle?: string; tone: Tone; content?: NodeContent; active?: boolean; onClick: () => void;
+  icon: LucideIcon; label: string; title: string; subtitle?: string; tone: Tone; content?: ContentInfo; active?: boolean; onClick: () => void;
 }) {
   return (
     <button

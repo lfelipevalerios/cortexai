@@ -1,5 +1,32 @@
-# Blueprint do Render. A aplicação web é exportada como site estático (modo demonstração).
+# Blueprint do Render: API (Node) + site estático. Banco e arquivos ficam no Supabase.
+# Variáveis marcadas com sync: false são pedidas no painel do Render ao aplicar o blueprint.
 services:
+  - type: web
+    name: cortex-api
+    runtime: node
+    branch: pre-prod
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @cortex/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.23.4
+      # Supabase → Connect → Session pooler (o Render não acessa a conexão direta, que é só IPv6)
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      # Supabase → Project Settings → API Keys → service_role (nunca vai para o navegador)
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: cortex-files
+      # Endereço do site, ex.: https://cortexai-3m7i.onrender.com
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SEED_ON_START
+        value: '1'
+
   - type: web
     name: cortex-web
     runtime: static
@@ -9,3 +36,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22.23.4
+      # Endereço da API, ex.: https://cortex-api.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

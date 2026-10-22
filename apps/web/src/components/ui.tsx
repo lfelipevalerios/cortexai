@@ -3,7 +3,7 @@
 import { clsx } from 'clsx';
 import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { X, CheckCircle2, XCircle, Info, type LucideIcon } from 'lucide-react';
-import { useCortex } from '@/lib/store';
+import { useUi } from '@/lib/store';
 
 export const cx = clsx;
 
@@ -112,7 +112,7 @@ export function NameModal({ open, onClose, title, initial, onSave, submitLabel =
 }
 
 export function Toaster() {
-  const toasts = useCortex((s) => s.toasts);
+  const toasts = useUi((s) => s.toasts);
   const icon = { sucesso: CheckCircle2, erro: XCircle, info: Info };
   const tone = { sucesso: 'text-primary', erro: 'text-danger', info: 'text-accent' };
   return (
