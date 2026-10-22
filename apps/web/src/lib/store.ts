@@ -2,79 +2,43 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
-import type { EnvId, ProfileId, WorkspaceData, AuditEvent } from '@cortex/schemas';
-import { generateWorkspaces } from '@cortex/seed';
+import {
+  emptyCapabilities, emptyContent, filesUnder, getContent,
+  type Attachment, type Brain, type NodePath, type Workspace,
+} from '@cortex/schemas';
+import { seedWorkspaces } from '@cortex/seed';
+import { deleteFile } from './files';
 
-/** "Hoje" da demonstração (mesma data do seed). */
-const SEED_TODAY = '2026-10-21';
-
-// Modo demonstração: o estado inteiro vive no navegador e implementa o mesmo
-// contrato que o backend do modo conectado vai implementar (ver lib/api.ts).
+// O conteúdo da árvore fica no navegador (localStorage); os arquivos, no IndexedDB.
 
 export interface Toast {
   id: number;
-  kind: 'sucesso' | 'aviso' | 'erro' | 'info';
+  kind: 'sucesso' | 'erro' | 'info';
   title: string;
-  description?: string;
-  undo?: () => void;
-  /** Link opcional para o próximo passo sugerido. */
-  href?: string;
-  hrefLabel?: string;
-}
-
-export interface RecentItem {
-  label: string;
-  href: string;
-}
-
-export interface TourState {
-  active: boolean;
-  scriptId: 'completo' | 'executivo' | 'tecnico';
-  stepIndex: number;
-  autopilot: boolean;
-  /** Apresentador saiu do roteiro para explorar. */
-  detached: boolean;
 }
 
 interface CortexState {
   hydrated: boolean;
-  workspaces: Record<string, WorkspaceData>;
-  activeWorkspaceId: string | null;
-  env: EnvId;
-  profile: ProfileId;
-  presentation: boolean;
-  showOffers: boolean;
-  recent: RecentItem[];
-  tour: TourState;
+  workspaces: Workspace[];
+  activeId: string | null;
   toasts: Toast[];
-  askOpen: boolean;
-  paletteOpen: boolean;
-  /** Marcadores de progresso da demo (ex.: "crm-conectado"), por workspace. */
-  flags: Record<string, Record<string, boolean>>;
 
-  setWorkspace: (id: string) => void;
-  setEnv: (env: EnvId) => void;
-  setProfile: (p: ProfileId) => void;
-  setPresentation: (on: boolean) => void;
-  setShowOffers: (on: boolean) => void;
-  setAskOpen: (on: boolean) => void;
-  setPaletteOpen: (on: boolean) => void;
-  pushRecent: (item: RecentItem) => void;
-  /** Altera o workspace ativo de forma imutável. Retorna o estado anterior para desfazer. */
-  mutate: (fn: (draft: WorkspaceData) => void, audit?: { action: string; object: string }) => WorkspaceData | null;
-  replaceWorkspace: (data: WorkspaceData) => void;
-  setFlag: (key: string, value?: boolean) => void;
-  toast: (t: Omit<Toast, 'id'>) => void;
-  dismissToast: (id: number) => void;
-  setTour: (patch: Partial<TourState>) => void;
-  resetDemo: () => void;
+  setActive: (id: string | null) => void;
+  addWorkspace: (name: string, segment: string) => string;
+  /** Altera o cérebro do workspace ativo de forma imutável. */
+  editBrain: (fn: (brain: Brain) => void) => void;
+  setText: (path: NodePath, text: string) => void;
+  addAttachment: (path: NodePath, file: Attachment) => void;
+  removeAttachment: (path: NodePath, fileId: string) => void;
+  addFront: (name: string, summary: string) => string;
+  renameFront: (frontId: string, name: string, summary: string) => void;
+  removeFront: (frontId: string) => void;
+  addJourney: (frontId: string, name: string, summary: string) => string;
+  renameJourney: (frontId: string, journeyId: string, name: string, summary: string) => void;
+  removeJourney: (frontId: string, journeyId: string) => void;
+  toast: (kind: Toast['kind'], title: string) => void;
 }
 
-function seedMap(): Record<string, WorkspaceData> {
-  return Object.fromEntries(generateWorkspaces().map((w) => [w.workspace.id, w]));
-}
-
-// localStorage pode lançar (modo privado, cota). A demo continua sem persistência.
 const safeStorage: StateStorage = {
   getItem: (k) => {
     try {
@@ -99,156 +63,116 @@ const safeStorage: StateStorage = {
   },
 };
 
-let toastSeq = 1;
-let auditSeq = 1;
+const now = () => new Date().toISOString();
+const slug = (s: string) =>
+  s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'item';
+const uid = (prefix: string, name: string) => `${prefix}-${slug(name)}-${Date.now().toString(36)}`;
 
-/** Hora atual da demo: o dia do seed com o relógio real, para eventos novos. */
-export function demoNow(): string {
-  const t = new Date();
-  return `${SEED_TODAY}T${t.toISOString().slice(11, 19)}Z`;
-}
+let toastSeq = 1;
 
 export const useCortex = create<CortexState>()(
   persist(
-    (set, get) => ({
-      hydrated: false,
-      workspaces: seedMap(),
-      activeWorkspaceId: null,
-      env: 'dev',
-      profile: 'champion',
-      presentation: false,
-      showOffers: false,
-      recent: [],
-      tour: { active: false, scriptId: 'completo', stepIndex: 0, autopilot: false, detached: false },
-      toasts: [],
-      askOpen: false,
-      paletteOpen: false,
-      flags: {},
-
-      setWorkspace: (id) => set({ activeWorkspaceId: id }),
-      setEnv: (env) => set({ env }),
-      setProfile: (profile) => set({ profile }),
-      setPresentation: (presentation) => set({ presentation }),
-      setShowOffers: (showOffers) => set({ showOffers }),
-      setAskOpen: (askOpen) => set({ askOpen }),
-      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-      pushRecent: (item) =>
-        set((s) => ({ recent: [item, ...s.recent.filter((r) => r.href !== item.href)].slice(0, 8) })),
-
-      mutate: (fn, audit) => {
-        const s = get();
-        const id = s.activeWorkspaceId;
-        if (!id) return null;
-        const before = s.workspaces[id];
-        const draft = structuredClone(before);
-        fn(draft);
-        if (audit) {
-          const user = draft.users.find((u) => u.profile === s.profile);
-          const ev: AuditEvent = {
-            id: `audit-live-${Date.now()}-${auditSeq++}`,
-            at: demoNow(),
-            actor: user?.name ?? 'Usuário da demo',
-            profile: s.profile,
-            action: audit.action,
-            object: audit.object,
-            env: s.env,
-          };
-          draft.audit = [ev, ...draft.audit];
-        }
-        set({ workspaces: { ...s.workspaces, [id]: draft } });
-        return before;
-      },
-      replaceWorkspace: (data) => set((s) => ({ workspaces: { ...s.workspaces, [data.workspace.id]: data } })),
-
-      setFlag: (key, value = true) =>
-        set((s) => {
-          const id = s.activeWorkspaceId ?? '_';
-          return { flags: { ...s.flags, [id]: { ...(s.flags[id] ?? {}), [key]: value } } };
-        }),
-
-      toast: (t) => {
-        const id = toastSeq++;
-        set((s) => ({ toasts: [...s.toasts, { ...t, id }] }));
-        setTimeout(() => get().dismissToast(id), t.undo ? 6000 : 3500);
-      },
-      dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
-
-      setTour: (patch) => set((s) => ({ tour: { ...s.tour, ...patch } })),
-
-      resetDemo: () =>
+    (set, get) => {
+      const editBrain = (fn: (brain: Brain) => void) =>
         set((s) => ({
-          workspaces: seedMap(),
-          flags: {},
-          recent: [],
-          env: 'dev',
-          profile: 'champion',
-          tour: { ...s.tour, stepIndex: 0, detached: false },
-        })),
-    }),
+          workspaces: s.workspaces.map((w) => {
+            if (w.id !== s.activeId) return w;
+            const brain = structuredClone(w.brain);
+            fn(brain);
+            return { ...w, brain };
+          }),
+        }));
+
+      const touch = (path: NodePath, fn: (c: NonNullable<ReturnType<typeof getContent>>) => void) =>
+        editBrain((b) => {
+          const c = getContent(b, path);
+          if (!c) return;
+          fn(c);
+          c.updatedAt = now();
+        });
+
+      return {
+        hydrated: false,
+        workspaces: seedWorkspaces(),
+        activeId: null,
+        toasts: [],
+
+        setActive: (activeId) => set({ activeId }),
+        addWorkspace: (name, segment) => {
+          const id = uid('ws', name);
+          const ws: Workspace = { id, name, segment, tagline: segment, brain: { core: emptyContent(), fronts: [] } };
+          set((s) => ({ workspaces: [...s.workspaces, ws] }));
+          return id;
+        },
+        editBrain,
+        setText: (path, text) => touch(path, (c) => (c.text = text)),
+        addAttachment: (path, file) => touch(path, (c) => c.files.push(file)),
+        removeAttachment: (path, fileId) => {
+          touch(path, (c) => (c.files = c.files.filter((f) => f.id !== fileId)));
+          deleteFile(fileId);
+        },
+        addFront: (name, summary) => {
+          const id = uid('fr', name);
+          editBrain((b) => b.fronts.push({ id, name, summary, content: emptyContent(), journeys: [] }));
+          return id;
+        },
+        renameFront: (frontId, name, summary) =>
+          editBrain((b) => {
+            const f = b.fronts.find((x) => x.id === frontId);
+            if (f) Object.assign(f, { name, summary });
+          }),
+        removeFront: (frontId) => {
+          const ws = get().workspaces.find((w) => w.id === get().activeId);
+          const f = ws?.brain.fronts.find((x) => x.id === frontId);
+          if (f) filesUnder(f).forEach((a) => deleteFile(a.id));
+          editBrain((b) => (b.fronts = b.fronts.filter((x) => x.id !== frontId)));
+        },
+        addJourney: (frontId, name, summary) => {
+          const id = uid('jr', name);
+          editBrain((b) =>
+            b.fronts
+              .find((f) => f.id === frontId)
+              ?.journeys.push({ id, name, summary, content: emptyContent(), design: emptyContent(), capabilities: emptyCapabilities() }),
+          );
+          return id;
+        },
+        renameJourney: (frontId, journeyId, name, summary) =>
+          editBrain((b) => {
+            const j = b.fronts.find((f) => f.id === frontId)?.journeys.find((x) => x.id === journeyId);
+            if (j) Object.assign(j, { name, summary });
+          }),
+        removeJourney: (frontId, journeyId) => {
+          const ws = get().workspaces.find((w) => w.id === get().activeId);
+          const j = ws?.brain.fronts.find((f) => f.id === frontId)?.journeys.find((x) => x.id === journeyId);
+          if (j) filesUnder(j).forEach((a) => deleteFile(a.id));
+          editBrain((b) => {
+            const f = b.fronts.find((x) => x.id === frontId);
+            if (f) f.journeys = f.journeys.filter((x) => x.id !== journeyId);
+          });
+        },
+        toast: (kind, title) => {
+          const id = toastSeq++;
+          set((s) => ({ toasts: [...s.toasts, { id, kind, title }] }));
+          setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 3000);
+        },
+      };
+    },
     {
-      name: 'cortex-demo-v1',
+      name: 'cortex-v2',
+      version: 1,
       storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
-      // Estado salvo por uma versão anterior do seed é descartado.
-      version: 2,
-      migrate: () => ({}) as CortexState,
-      // Nunca aceita uma lista de workspaces vazia vinda do navegador.
+      partialize: (s) => ({ workspaces: s.workspaces, activeId: s.activeId }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<CortexState>;
-        const valid = p.workspaces && Object.keys(p.workspaces).length > 0;
-        return {
-          ...current,
-          ...p,
-          workspaces: valid ? p.workspaces! : current.workspaces,
-          activeWorkspaceId: valid ? (p.activeWorkspaceId ?? null) : null,
-        };
+        const valid = Array.isArray(p.workspaces) && p.workspaces.length > 0;
+        return { ...current, workspaces: valid ? p.workspaces! : current.workspaces, activeId: valid ? (p.activeId ?? null) : null };
       },
-      partialize: (s) => ({
-        workspaces: s.workspaces,
-        activeWorkspaceId: s.activeWorkspaceId,
-        env: s.env,
-        profile: s.profile,
-        recent: s.recent,
-        tour: s.tour,
-        flags: s.flags,
-        showOffers: s.showOffers,
-      }),
-      onRehydrateStorage: () => () => {
-        useCortex.setState({ hydrated: true });
-      },
+      onRehydrateStorage: () => () => useCortex.setState({ hydrated: true }),
     },
   ),
 );
 
-// ---------- Seletores ----------
-
-export function useWs(): WorkspaceData {
-  const data = useCortex((s) => (s.activeWorkspaceId ? s.workspaces[s.activeWorkspaceId] : null));
-  if (!data) throw new Error('Nenhum workspace ativo');
-  return data;
+export function useActiveWorkspace(): Workspace | null {
+  return useCortex((s) => s.workspaces.find((w) => w.id === s.activeId) ?? null);
 }
-
-export function useOptionalWs(): WorkspaceData | null {
-  return useCortex((s) => (s.activeWorkspaceId ? s.workspaces[s.activeWorkspaceId] : null));
-}
-
-export function useEnv(): EnvId {
-  return useCortex((s) => s.env);
-}
-
-export function useProfile(): ProfileId {
-  return useCortex((s) => s.profile);
-}
-
-export function useFlag(key: string): boolean {
-  return useCortex((s) => !!s.flags[s.activeWorkspaceId ?? '_']?.[key]);
-}
-
-/** Acesso fora de componentes (ações do piloto automático, por exemplo). */
-export const cortex = {
-  get: () => useCortex.getState(),
-  ws: () => {
-    const s = useCortex.getState();
-    return s.activeWorkspaceId ? s.workspaces[s.activeWorkspaceId] : null;
-  },
-};

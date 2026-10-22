@@ -1,75 +1,83 @@
-// Gerador determinístico dos 4 workspaces da demo do Córtex.
-import type { ConnectorTool, DiscoveredObject, IndustryId, WorkspaceData } from '@cortex/schemas';
-import { assemble, makeCtx, type Ctx, type IndustryContent, type IndustryMeta } from './common';
-import * as saude from './industries/saude';
-import * as varejo from './industries/varejo';
-import * as financeiro from './industries/financeiro';
-import * as telecom from './industries/telecom';
+// Exemplos leves para os 4 workspaces: só o suficiente para mostrar a estrutura.
+import { emptyCapabilities, emptyContent, type BusinessFront, type Journey, type Workspace } from '@cortex/schemas';
 
-export { CONNECTOR_TYPES } from './connectors';
-export { SEED_TODAY, scriptedPath } from './common';
-
-interface IndustryModule {
-  meta: IndustryMeta;
-  DEMO: DemoIds;
-  BREAKING: { contractId: string; field: string };
-  crmPreset: (ctx: Ctx) => CrmPreset;
-  build: (ctx: Ctx) => IndustryContent;
+function journey(id: string, name: string, summary: string, design = '', arquitetura = ''): Journey {
+  const capabilities = emptyCapabilities();
+  capabilities.arquitetura = emptyContent(arquitetura);
+  return { id, name, summary, content: emptyContent(), design: emptyContent(design), capabilities };
 }
 
-export interface CrmPreset {
-  typeId: string;
-  name: string;
-  endpoint: string;
-  objects: DiscoveredObject[];
-  tools: ConnectorTool[];
-  domainId: string;
+function front(id: string, name: string, summary: string, journeys: Journey[]): BusinessFront {
+  return { id, name, summary, content: emptyContent(), journeys };
 }
 
-export interface DemoIds {
-  anchorJourneyId: string;
-  prdJourneyId: string;
-  anchorInitiativeId: string;
-  whatsappChannelId: string;
-  showcaseDecisionTableId: string;
-  showcaseQuestion: string;
-  crmSystemId: string;
+export function seedWorkspaces(): Workspace[] {
+  return [
+    {
+      id: 'ws-saude',
+      name: 'Rede Sanare',
+      segment: 'Saúde',
+      tagline: 'Rede hospitalar',
+      brain: {
+        core: emptyContent('Rede com 6 hospitais e 14 clínicas. Atende convênios e particulares.'),
+        fronts: [
+          front('sau-atendimento', 'Atendimento ao paciente', 'Do agendamento à alta.', [
+            journey('sau-agendamento', 'Agendamento de exames', 'Paciente agenda pelo WhatsApp com pré-autorização.', '1. Paciente pede o exame\n2. Verifica cobertura\n3. Confirma horário'),
+          ]),
+          front('sau-faturamento', 'Faturamento', 'Contas e relacionamento com operadoras.', []),
+        ],
+      },
+    },
+    {
+      id: 'ws-varejo',
+      name: 'Aurora Varejo',
+      segment: 'Varejo',
+      tagline: 'Varejista omnichannel',
+      brain: {
+        core: emptyContent('120 lojas físicas e e-commerce. Casa, cozinha e tecnologia.'),
+        fronts: [
+          front('var-pos-venda', 'Pós-venda', 'Trocas, devoluções e garantia.', [
+            journey('var-troca', 'Troca e devolução', 'Cliente solicita troca pelo app.'),
+          ]),
+          front('var-vendas', 'Vendas digitais', 'Jornada de compra on-line.', []),
+        ],
+      },
+    },
+    {
+      id: 'ws-financeiro',
+      name: 'Banco Lumen',
+      segment: 'Financeiro',
+      tagline: 'Banco digital',
+      brain: {
+        core: emptyContent('Banco digital para pessoas e pequenas empresas. 2 milhões de clientes.'),
+        fronts: [
+          front('fin-pagamentos', 'Pagamentos', 'PIX, boletos e cartões.', [
+            journey('fin-contestacao-pix', 'Contestação de PIX', 'Cliente contesta um PIX pelo app.'),
+          ]),
+        ],
+      },
+    },
+    {
+      id: 'ws-telecom',
+      name: 'Onda Telecom',
+      segment: 'Telecom',
+      tagline: 'Operadora fixa e móvel',
+      brain: {
+        core: emptyContent('Operadora regional com 1,2 milhão de linhas. Foco em pessoas e PME.'),
+        fronts: [
+          front('tel-atendimento-pme', 'Atendimento PME', 'Relacionamento com pequenas empresas.', [
+            journey(
+              'tel-segunda-via',
+              'Segunda via de fatura',
+              'Cliente PME pede a segunda via pelo WhatsApp.',
+              '1. Cliente pede a segunda via\n2. Identificação pelo número\n3. Envio do boleto',
+              'API de faturamento (REST) e WhatsApp Business API.',
+            ),
+            journey('tel-contestacao', 'Contestação de fatura', 'Cliente contesta uma cobrança.'),
+          ]),
+          front('tel-retencao', 'Retenção', 'Evitar cancelamentos.', []),
+        ],
+      },
+    },
+  ];
 }
-
-const MODULES: IndustryModule[] = [saude, varejo, financeiro, telecom];
-
-/** Gera os 4 workspaces (saúde, varejo, financeiro, telecom). Mesma saída a cada chamada. */
-export function generateWorkspaces(): WorkspaceData[] {
-  return MODULES.map((m) => {
-    const ctx = makeCtx(m.meta);
-    return assemble(ctx, m.build(ctx));
-  });
-}
-
-export function getWorkspace(id: string): WorkspaceData | undefined {
-  const m = MODULES.find((x) => x.meta.ws === id);
-  if (!m) return undefined;
-  const ctx = makeCtx(m.meta);
-  return assemble(ctx, m.build(ctx));
-}
-
-/** Pré-preenchimento do wizard de conectores (capítulo 2): o CRM de cada workspace. */
-export const CRM_WIZARD_PRESET: Record<IndustryId, CrmPreset> = Object.fromEntries(
-  MODULES.map((m) => [m.meta.industry, m.crmPreset(makeCtx({ ...m.meta, seed: m.meta.seed + 7 }))]),
-) as Record<IndustryId, CrmPreset>;
-
-/** Campo de contrato usado por jornada em Prd: removê-lo deve bloquear a publicação. */
-export const BREAKING_FIELD: Record<IndustryId, { contractId: string; field: string }> = {
-  saude: saude.BREAKING,
-  varejo: varejo.BREAKING,
-  financeiro: financeiro.BREAKING,
-  telecom: telecom.BREAKING,
-};
-
-/** Objetos-chave da demo para a UI e o roteiro guiado. */
-export const DEMO_IDS: Record<IndustryId, DemoIds> = {
-  saude: saude.DEMO,
-  varejo: varejo.DEMO,
-  financeiro: financeiro.DEMO,
-  telecom: telecom.DEMO,
-};

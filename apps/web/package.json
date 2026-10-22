@@ -9,15 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cortex/engine": "workspace:*",
     "@cortex/schemas": "workspace:*",
     "@cortex/seed": "workspace:*",
-    "@cortex/tour": "workspace:*",
     "@cortex/ui": "workspace:*",
-    "@xyflow/react": "^12.8.2",
     "clsx": "^2.1.1",
-    "echarts": "^5.6.0",
-    "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.468.0",
     "next": "15.5.4",
     "react": "19.1.1",
