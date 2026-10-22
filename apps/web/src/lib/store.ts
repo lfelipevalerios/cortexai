@@ -189,6 +189,20 @@ export const useCortex = create<CortexState>()(
       name: 'cortex-demo-v1',
       storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
+      // Estado salvo por uma versão anterior do seed é descartado.
+      version: 2,
+      migrate: () => ({}) as CortexState,
+      // Nunca aceita uma lista de workspaces vazia vinda do navegador.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<CortexState>;
+        const valid = p.workspaces && Object.keys(p.workspaces).length > 0;
+        return {
+          ...current,
+          ...p,
+          workspaces: valid ? p.workspaces! : current.workspaces,
+          activeWorkspaceId: valid ? (p.activeWorkspaceId ?? null) : null,
+        };
+      },
       partialize: (s) => ({
         workspaces: s.workspaces,
         activeWorkspaceId: s.activeWorkspaceId,
