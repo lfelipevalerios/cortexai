@@ -1,6 +1,7 @@
 // Onda Telecom: operadora fixa e móvel (empresa fictícia).
+import type { Channel, DataDomain, DecisionTable, EcosystemSystem } from '@cortex/schemas';
 import type { IndustryContent, IndustryMeta, Ctx } from '../common';
-import { connector, contract, obj, table, ts, dateAgo } from '../common';
+import { connector, contract, obj, table, dateAgo, okValidation } from '../common';
 
 const W = 'tel';
 export const meta: IndustryMeta = {
@@ -110,7 +111,7 @@ export function build(ctx: Ctx): IndustryContent {
     }),
   ];
 
-  const channels = [
+  const channels: Channel[] = [
     { id: 'tel-ch-whatsapp', type: 'whatsapp' as const, name: 'WhatsApp Onda Empresas', status: 'ativo' as const,
       config: { numero: '+55 11 4000-0000', templates: 'segunda_via_v2, protocolo_contestacao', optin: 'obrigatório no primeiro contato', horario: '24 horas' }, journeyByEnv: {} },
     { id: 'tel-ch-ura', type: 'voz' as const, name: 'URA 0800 Empresas', status: 'ativo' as const,
@@ -121,7 +122,7 @@ export function build(ctx: Ctx): IndustryContent {
       config: { fila: 'Retenção PME', sugestoes: 'ativadas' }, journeyByEnv: { dev: J.prd, hml: J.prd, prd: J.prd } },
   ];
 
-  const systems = [
+  const systems: EcosystemSystem[] = [
     { id: 'tel-sys-crm', name: 'BSS · CRM (Salesforce)', category: 'crm' as const },
     { id: 'tel-sys-billing', name: 'BSS · Billing', category: 'setorial' as const, connectorId: 'tel-con-billing' },
     { id: 'tel-sys-oss', name: 'OSS · Inventário e ativação', category: 'banco' as const, connectorId: 'tel-con-oss' },
@@ -134,7 +135,7 @@ export function build(ctx: Ctx): IndustryContent {
     { id: 'tel-sys-backoffice', name: 'Backoffice', category: 'canal' as const },
   ];
 
-  const domains = [
+  const domains: DataDomain[] = [
     { id: D.cliente, name: 'Cliente', kind: 'negocio' as const, owner: u('dono_negocio'), description: 'Pessoas e empresas atendidas, com segmento, contatos e consentimentos.', entities: ['Cliente', 'Contato', 'Consentimento'], relations: [D.contrato, D.fatura, D.os], products: ['tel-tb-our-perfil'], consumers: [J.prd], position: { x: 0, y: 0 } },
     { id: D.contrato, name: 'Contrato e plano', kind: 'negocio' as const, owner: u('dono_negocio'), description: 'Planos contratados, fidelidade e serviços ativos por linha.', entities: ['Contrato', 'Linha', 'Serviço'], relations: [D.cliente, D.oferta, D.fatura], products: [], consumers: [J.prd], position: { x: 300, y: 0 } },
     { id: D.fatura, name: 'Fatura', kind: 'negocio' as const, owner: u('dono_negocio'), description: 'Faturas, itens cobrados, pagamentos e contestações.', entities: ['Fatura', 'Item de fatura', 'Contestação'], relations: [D.cliente, D.contrato], products: ['tel-tb-our-fatura'], consumers: [J.anchor], position: { x: 600, y: 0 } },
@@ -352,7 +353,7 @@ export function build(ctx: Ctx): IndustryContent {
     { id: 'tel-art-tmf', areaId: 'area-arquitetura', kind: 'Integração padrão', title: 'TM Forum Open APIs como contrato de integração BSS', summary: 'Billing, catálogo e trouble ticket seguem TMF678, TMF620 e TMF621.', tags: ['tmforum', 'bss'] },
   ];
 
-  const decisionTables = [
+  const decisionTables: DecisionTable[] = [
     {
       id: 'tel-dt-contestacao', name: 'Contestação de fatura', domainId: D.fatura, version: '3.0.0', componentId: 'tel-cp-rule-contestacao',
       description: 'Define a ação, o prazo e a alçada de uma contestação de fatura a partir do motivo e do valor.',
@@ -598,10 +599,10 @@ export function build(ctx: Ctx): IndustryContent {
       problem: 'Só 12% dos clientes móveis PME têm fibra da Onda.', objective: 'Oferta combinada no momento da segunda via.', metric: 'Penetração de fibra na base PME de 12% para 20%' },
     { id: 'tel-in-04', title: 'Diagnóstico técnico e abertura de OS automática', type: 'eficiencia', domainId: D.os, owner: u('champion'), stage: 'construcao', expectedValueBRL: 1350000, health: 'ok', journeyId: J.auto,
       problem: '22% das OS são abertas durante falhas massivas e depois canceladas.', objective: 'Checar a rede antes de abrir OS e priorizar pela regra.', metric: 'OS indevidas de 22% para 5%',
-      validation: { checks: [], recommendation: 'O cérebro indica seguir como automação sem agente.', attention: [], reusePct: 55, solutionType: 'automacao', decision: 'seguir' } },
+      validation: okValidation('O cérebro indica seguir como automação sem agente, priorizando pela tabela do cérebro.', [], 55, 'automacao') },
     { id: 'tel-in-05', title: 'Retenção com oferta personalizada', type: 'agente_ia', domainId: D.oferta, owner: u('dono_negocio'), stage: 'operacao', expectedValueBRL: 4200000, health: 'ok', journeyId: J.prd,
       problem: 'Ofertas de retenção dadas fora da regra geravam desconto excessivo e reclamações.', objective: 'Oferta elegível e personalizada em todo pedido de cancelamento.', metric: 'Churn PME de 2,4% para 1,6% ao mês',
-      validation: { checks: [], recommendation: 'O cérebro indica seguir com guardrail de elegibilidade obrigatório.', attention: ['Manter a tabela de elegibilidade atualizada a cada campanha'], reusePct: 62, solutionType: 'agente', decision: 'seguir' } },
+      validation: okValidation('O cérebro indica seguir com guardrail de elegibilidade obrigatório.', ['Manter a tabela de elegibilidade atualizada a cada campanha'], 62, 'agente') },
     { id: 'tel-in-06', title: 'Modernização da URA com voz natural', type: 'modernizacao', domainId: D.cliente, owner: u('champion'), stage: 'prototipo', expectedValueBRL: 1800000, health: 'atencao',
       problem: 'Menu da URA com 9 opções e 34% de abandono.', objective: 'Entrada por voz natural ligada às mesmas jornadas do WhatsApp.', metric: 'Abandono na URA de 34% para 18%' },
     { id: 'tel-in-07', title: 'Cobrança preventiva de PME inadimplente', type: 'eficiencia', domainId: D.fatura, owner: u('dono_negocio'), stage: 'validacao', expectedValueBRL: 750000, health: 'risco',
@@ -641,7 +642,7 @@ export function build(ctx: Ctx): IndustryContent {
       { name: 'Churn PME', unit: '% ao mês', baseline: 2.4, current: 1.9, target: 1.6, better: 'down' },
       { name: 'NPS', unit: 'pontos', baseline: 21, current: 34, target: 40, better: 'up' },
     ],
-    guardrail: 'Oferta de retenção fora da elegibilidade do plano',
+    guardrail: { text: 'Oferta de retenção fora da elegibilidade do plano', nodeId: 'conteudo' },
     dailyVolume: 5200,
     suggestions: ({ journeys: js }) => {
       const prdJ = js.find((j) => j.id === J.prd)!;
@@ -659,5 +660,3 @@ export function build(ctx: Ctx): IndustryContent {
   };
 }
 
-// Evita aviso de import não usado em algumas configurações.
-void ts;

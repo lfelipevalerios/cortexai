@@ -244,7 +244,10 @@ export function registerTools(server: McpServer, scope: Scope, run: Recorder, wr
             .filter((o) => !jornadaId || o.journeyId === jornadaId)
             .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
           const anchorIds = new Set(w.journeys.filter((j) => j.anchor).map((j) => j.id));
-          order = jornadaId ? list[0] : list.find((o) => anchorIds.has(o.journeyId)) ?? list[0];
+          // Preferência: OC em aberto antes de concluída; jornada-âncora antes das demais.
+          const open = list.filter((o) => o.status !== 'concluida');
+          const pool = open.length ? open : list;
+          order = jornadaId ? pool[0] : pool.find((o) => anchorIds.has(o.journeyId)) ?? pool[0];
         }
         if (!order) {
           throw new ToolError(
@@ -382,16 +385,29 @@ export function registerTools(server: McpServer, scope: Scope, run: Recorder, wr
             })),
           };
         }
-        const chunks = w.documents
+        const docChunks = w.documents
           .filter((d) => d.status === 'processado')
-          .flatMap((d) => d.chunks.map((text, i) => ({ d, i, text, s: score(pergunta, text, d.title) })))
+          .flatMap((d) =>
+            d.chunks.map((text, i) => ({
+              fonte: 'documento', documento: d.title, docId: d.id, uri: uriOf(scope.workspaceId, 'documentos', d.id), trecho: i as number | undefined, texto: text,
+              s: score(pergunta, text, d.title),
+            })),
+          );
+        // Artefatos do cérebro (objetivos, mercado, regulação, padrões, ADRs) também respondem perguntas.
+        const resources = listResources(scope);
+        const artChunks = w.artifacts.map((a) => ({
+          fonte: 'cerebro', documento: a.title, docId: a.id, uri: resources.find((r) => r.id === a.id)?.uri, trecho: undefined as number | undefined,
+          texto: [a.summary, a.body].filter(Boolean).join('\n\n'),
+          s: score(pergunta, `${a.summary} ${a.body ?? ''} ${a.tags.join(' ')}`, a.title),
+        }));
+        const chunks = [...docChunks, ...artChunks]
           .filter((c) => c.s > 0)
           .sort((a, b) => b.s - a.s)
           .slice(0, limite ?? 4);
         return {
           modo: 'busca_por_palavras',
           aviso: chunks.length ? undefined : 'Nenhum trecho relevante encontrado. Diga que a base não cobre o assunto em vez de inventar.',
-          trechos: chunks.map((c) => ({ documento: c.d.title, docId: c.d.id, uri: uriOf(scope.workspaceId, 'documentos', c.d.id), trecho: c.i, score: Number(c.s.toFixed(2)), texto: c.text })),
+          trechos: chunks.map(({ s, ...c }) => ({ ...c, score: Number(s.toFixed(2)) })),
         };
       }),
   );
@@ -412,6 +428,31 @@ export function registerTools(server: McpServer, scope: Scope, run: Recorder, wr
       run('validar_contra_padroes', () => {
         if (!codigo && !descricao) throw new ToolError('Informe codigo ou descricao.');
         return validate(ws(), { codigo, descricao, caminhoArquivo });
+      }),
+  );
+
+  server.registerTool(
+    'obter_iniciativa',
+    {
+      title: 'Obter iniciativa',
+      description: 'Lê uma iniciativa (problema, objetivo, métrica, valor esperado, estágio, jornada e validação). Sem id, lista as iniciativas do workspace. Usada por /cortex:validar e /cortex:prototipar.',
+      inputSchema: { id: z.string().optional() },
+      annotations: { readOnlyHint: true },
+    },
+    ({ id }) =>
+      run('obter_iniciativa', () => {
+        const w = ws();
+        if (!id) return { total: w.initiatives.length, iniciativas: w.initiatives.map((i) => ({ id: i.id, titulo: i.title, tipo: i.type, estagio: i.stage, dominioId: i.domainId, saude: i.health })) };
+        const ini = w.initiatives.find((i) => i.id === id);
+        if (!ini) throw new ToolError(`Iniciativa ${id} não encontrada.`, { iniciativas: w.initiatives.map((i) => i.id) });
+        const journey = w.journeys.find((j) => j.id === ini.journeyId);
+        const domain = w.domains.find((d) => d.id === ini.domainId);
+        return {
+          ...ini,
+          dominio: domain ? { id: domain.id, nome: domain.name, entidades: domain.entities, dono: domain.owner } : undefined,
+          jornada: journey ? { id: journey.id, nome: journey.name, descricao: journey.description, persona: journey.persona, casosDeTeste: journey.testCases, versoes: journey.versions.map((v) => v.version) } : undefined,
+          ordens: w.buildOrders.filter((o) => o.journeyId === ini.journeyId).map((o) => ({ id: o.id, env: o.env, status: o.status })),
+        };
       }),
   );
 
@@ -449,13 +490,28 @@ export function registerTools(server: McpServer, scope: Scope, run: Recorder, wr
     ({ ordemId, passos, resumo }) =>
       run('registrar_plano', () => {
         const w = ws();
-        const o = findOrder(w, scope, ordemId);
+        let o = findOrder(w, scope, ordemId);
+        let reaberta: string | undefined;
+        if (o.status === 'concluida' || o.status === 'pronta_revisao') {
+          // OC já construída (plano B da demo): não sobrescreve; abre uma nova rodada clonada.
+          const n = w.buildOrders.filter((x) => x.id.startsWith(`${o.id}-r`)).length + 1;
+          const clone: BuildOrder = {
+            ...o, id: `${o.id}-r${n}`, status: 'na_fila', branch: `${o.branch}-r${n}`, createdAt: new Date().toISOString(),
+            plan: [], progress: {}, evidences: [], prUrl: undefined, tokens: undefined,
+          };
+          w.buildOrders.push(clone);
+          reaberta = `A OC ${o.id} já estava "${o.status}". Foi aberta a nova rodada ${clone.id}; use este id nas próximas chamadas.`;
+          o = clone;
+        }
         o.plan = passos;
         o.status = 'plano_registrado';
         const j = w.journeys.find((x) => x.id === o.journeyId);
         for (const n of (j && journeyGraphOf(j, o.journeyVersion)?.nodes) ?? []) o.progress[n.id] ??= 'pendente';
         writeEvent('registrar_plano', o.id, resumo ?? `${passos.length} passos`);
-        return { ordemId: o.id, status: o.status, plano: o.plan, mensagem: 'Plano registrado. Aguarde a aprovação do Champion AI no Córtex (ou no terminal) antes de implementar.' };
+        return {
+          ordemId: o.id, status: o.status, plano: o.plan, branch: o.branch, aviso: reaberta,
+          mensagem: 'Plano registrado. Aguarde a aprovação do Champion AI no Córtex (ou no terminal) antes de implementar.',
+        };
       }),
   );
 

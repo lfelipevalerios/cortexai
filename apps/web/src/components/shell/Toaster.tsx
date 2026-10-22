@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { CheckCircle2, AlertTriangle, XCircle, Info, X } from 'lucide-react';
 import { useCortex } from '@/lib/store';
 import { cx } from '@/components/ui';
@@ -20,6 +21,11 @@ export function Toaster() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">{t.title}</div>
               {t.description && <div className="mt-0.5 text-xs text-text-muted">{t.description}</div>}
+              {t.href && (
+                <Link href={t.href} onClick={() => dismiss(t.id)} className="mt-1 inline-block text-xs font-medium text-primary-soft hover:underline">
+                  {t.hrefLabel ?? 'Abrir'} →
+                </Link>
+              )}
             </div>
             {t.undo && (
               <button

@@ -6,7 +6,7 @@ import type {
 } from '@cortex/schemas';
 import { store, wsOf, type Scope } from './store.js';
 
-export const RESOURCE_KINDS = ['regras', 'padroes', 'adrs', 'contratos', 'documentos', 'politicas'] as const;
+export const RESOURCE_KINDS = ['regras', 'padroes', 'adrs', 'contratos', 'documentos', 'politicas', 'negocio'] as const;
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 
 const KIND_LABEL: Record<ResourceKind, string> = {
@@ -16,6 +16,7 @@ const KIND_LABEL: Record<ResourceKind, string> = {
   contratos: 'Contrato de dados',
   documentos: 'Documento homologado',
   politicas: 'Política',
+  negocio: 'Artefato de negócio',
 };
 
 export interface ResourceEntry {
@@ -195,8 +196,9 @@ export function listResources(scope: Scope): ResourceEntry[] {
   for (const c of ws.components.filter((c) => c.type === 'rule' && c.status !== 'depreciado')) {
     out.push({ uri: uriOf(id, 'regras', c.id), kind: 'regras', id: c.id, name: `Regra: ${c.name}`, description: c.description, mimeType: 'text/markdown', render: () => renderComponent(c) });
   }
-  for (const a of ws.artifacts.filter((a) => isTechArtifact(a, ws))) {
-    const kind: ResourceKind = isAdr(a) ? 'adrs' : 'padroes';
+  for (const a of ws.artifacts) {
+    // Lado de negócio do cérebro (objetivos, mercado, regulação, jornadas do cliente): usado por /cortex:validar.
+    const kind: ResourceKind = !isTechArtifact(a, ws) ? 'negocio' : isAdr(a) ? 'adrs' : 'padroes';
     out.push({ uri: uriOf(id, kind, a.id), kind, id: a.id, name: `${KIND_LABEL[kind]}: ${a.title}`, description: a.summary, mimeType: 'text/markdown', render: () => renderArtifact(a, ws) });
   }
   for (const c of ws.contracts.filter((c) => c.status !== 'rascunho')) {
@@ -234,7 +236,7 @@ export function registerResources(server: McpServer, scope: Scope, onRead: (uri:
     {
       title: 'Cérebro do projeto',
       description:
-        'Regras de negócio (tabelas de decisão), padrões técnicos, ADRs, contratos de dados (ODCS), documentos homologados e políticas do workspace do token.',
+        'Regras de negócio (tabelas de decisão), padrões técnicos, ADRs, contratos de dados (ODCS), documentos homologados, políticas e artefatos de negócio do workspace do token.',
     },
     async (uri, vars) => {
       const wsId = String(vars.workspaceId);

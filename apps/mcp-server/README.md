@@ -78,10 +78,12 @@ Use `--scope project` para gravar em `.mcp.json` no repositório (compartilhado 
 | `contratos` | `contracts` publicados | YAML no estilo ODCS |
 | `documentos` | documentos processados e componentes `documento` homologados | Markdown com os trechos |
 | `politicas` | políticas ativas no ambiente do token | Markdown + JSON da regra |
+| `negocio` | artefatos das áreas de negócio do cérebro (OKRs, mercado, regulação, produtos) | Markdown |
 
-**Ferramentas.** Leitura: `obter_ordem`, `buscar_regra`, `obter_contrato`, `listar_componentes`, `consultar_conhecimento`, `validar_contra_padroes` e `obter_telemetria` (extra, para a demo). Escrita: `registrar_plano`, `registrar_progresso`, `registrar_evidencia`, `propor_mudanca`, `salvar_rascunho_jornada`, `registrar_validacao`, `criar_historia_itsm`.
+**Ferramentas.** Leitura: `obter_ordem`, `buscar_regra`, `obter_contrato`, `listar_componentes`, `consultar_conhecimento`, `validar_contra_padroes`, além de dois extras: `obter_iniciativa` (usada por `/cortex:validar` e `/cortex:prototipar`) e `obter_telemetria` (para a demo). Escrita: `registrar_plano`, `registrar_progresso`, `registrar_evidencia`, `propor_mudanca`, `salvar_rascunho_jornada`, `registrar_validacao`, `criar_historia_itsm`.
 
 - `obter_ordem` devolve o pacote de construção completo: OC, iniciativa, jornada e grafo, mapa nó → artefato esperado, regras, contratos ODCS, componentes, casos de teste, políticas e próximos passos. Sem argumentos, devolve a OC mais recente do ambiente (prefere a jornada-âncora).
+- `registrar_plano` numa OC já `concluida` ou `pronta_revisao` (por exemplo, o plano B da demo) não a sobrescreve: abre uma nova rodada `<id>-r1` com progresso zerado e devolve o novo `ordemId`.
 - `validar_contra_padroes` aplica heurísticas (PII em log/resposta sem máscara, segredo no código, SQL concatenado, stack do anel *Evitar* do radar ou proibida em política de stack) e aponta a regra de origem do workspace (política, Rule ou padrão técnico), com um padrão Córtex como reserva.
 - `consultar_conhecimento` usa a recuperação pré-calculada do seed quando a pergunta coincide com a do roteiro e, nas demais, uma busca por palavras-chave nos trechos.
 

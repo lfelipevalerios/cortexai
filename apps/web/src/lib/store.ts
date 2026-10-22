@@ -17,6 +17,9 @@ export interface Toast {
   title: string;
   description?: string;
   undo?: () => void;
+  /** Link opcional para o próximo passo sugerido. */
+  href?: string;
+  hrefLabel?: string;
 }
 
 export interface RecentItem {

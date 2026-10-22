@@ -10,7 +10,7 @@ import {
   type KnowledgeDocument, type KnowledgeGraph, type LakeTable, type LineageNode, type MetricSeries,
   type Policy, type ProfileId, type QualityRule, type RadarItem, type Release, type RetrievalExample,
   type SqlExample, type StepScript, type Suggestion, type SyncMode, type TraceStep, type User,
-  type Workspace, type WorkspaceData,
+  type Validation, type ValidationCheck, type Workspace, type WorkspaceData,
 } from '@cortex/schemas';
 import {
   CITIES, FIRST_NAMES, LAST_NAMES, cnpj, hashSeed, maskEmail, maskName, maskedCpf, mulberry32, round,
@@ -473,6 +473,27 @@ export function scriptedPath(j: Journey, version?: string): JourneyNode[] {
   return path;
 }
 
+/** Validação já decidida ("seguir") para iniciativas em estágios avançados. */
+export function okValidation(
+  recommendation: string, attention: string[], reusePct: number, solutionType: Validation['solutionType'],
+): Validation {
+  const c = (key: ValidationCheck['key'], label: string, summary: string, source: string): ValidationCheck =>
+    ({ key, label, result: 'verde', summary, source });
+  return {
+    checks: [
+      c('estrategia', 'Estratégia', 'Ligada a um OKR vigente da empresa.', 'Empresa · OKRs 2026'),
+      c('mercado', 'Mercado e regulação', 'Sem impedimento regulatório identificado.', 'Mercado · fichas do setor'),
+      c('regras', 'Regras de negócio', 'Regras existentes cobrem os casos previstos.', 'Regras de negócio'),
+      c('dados', 'Dados', 'Contratos publicados para todas as entidades usadas.', 'Dados · contratos'),
+      c('integracoes', 'Integrações e canais', 'Conectores e canais necessários já ativos.', 'Conectores e Canais'),
+      c('arquitetura', 'Arquitetura', 'Segue arquitetura de referência aprovada.', 'Arquitetura · referências'),
+      c('reuso', 'Reuso', `${reusePct}% de reuso de componentes homologados.`, 'Catálogo'),
+      c('business_case', 'Business case', 'Valor esperado acima da linha de base acordada.', 'Telemetria · linha de base'),
+    ],
+    recommendation, attention, reusePct, solutionType, decision: 'seguir',
+  };
+}
+
 // ---------- Conteúdo genérico (todas as indústrias) ----------
 export const AREAS: { id: string; side: 'negocio' | 'tecnico'; name: string; description: string; owner: ProfileId }[] = [
   { id: 'area-empresa', side: 'negocio', name: 'Empresa', description: 'Estratégia, objetivos, OKRs e processos.', owner: 'patrocinador' },
@@ -501,6 +522,8 @@ function techArtifacts(ctx: Ctx): BrainArtifact[] {
     { id: `${p}-art-reuso`, areaId: 'area-engenharia', kind: 'Padrão', title: 'Reuso antes de construir', summary: 'Antes de criar uma skill ou tool, consultar o catálogo; componentes homologados têm prioridade.', tags: ['catálogo', 'reuso'], componentId: `${p}-cp-skill-resumo` },
     { id: `${p}-art-pipeline`, areaId: 'area-devops', kind: 'Pipeline', title: 'Promoção Dev → Hml → Prd', summary: 'Gates automáticos (testes, componentes homologados, contratos compatíveis) e aprovação humana por ambiente.', tags: ['promoção', 'gates'] },
     { id: `${p}-art-canario`, areaId: 'area-devops', kind: 'Estratégia', title: 'Liberação gradual por canal', summary: 'Nova versão recebe 10%, 50% e 100% do tráfego do canal, com rollback em um clique.', tags: ['deploy', 'rollback'] },
+    { id: `${p}-art-rollback`, areaId: 'area-devops', kind: 'Runbook', title: 'Rollback em um clique', summary: 'A versão anterior volta a receber 100% do tráfego e o evento fica na auditoria com motivo obrigatório.', tags: ['rollback', 'auditoria'] },
+    { id: `${p}-art-classif`, areaId: 'area-seguranca', kind: 'Requisito', title: 'Requisitos por classificação de dado', summary: 'Público circula livre; interno só autenticado; PII mascarada fora de Prd; sensível só com modelo e região aprovados.', tags: ['classificação', 'pii', 'sensível'] },
     { id: `${p}-art-lgpd`, areaId: 'area-seguranca', kind: 'Controle', title: 'Controles LGPD por classificação', summary: 'PII mascarada fora de Prd, retenção por finalidade e registro de consentimento antes de contato ativo.', tags: ['lgpd', 'privacidade'], componentId: `${p}-cp-hook-pii` },
     { id: `${p}-art-segredos`, areaId: 'area-seguranca', kind: 'Controle', title: 'Gestão de segredos no cofre', summary: 'Credenciais ficam no cofre e as telas mostram apenas a referência kv://; rotação a cada 90 dias.', tags: ['segredos', 'cofre'] },
   ];
@@ -605,8 +628,8 @@ export interface IndustryContent {
   initiatives: Initiative[];
   policies: Policy[];
   kpis: CockpitKpi[];
-  /** Texto do guardrail de destaque do setor (usado em execuções bloqueadas). */
-  guardrail: string;
+  /** Guardrail de destaque do setor e nó da jornada em Prd onde ele bloqueia (execuções bloqueadas). */
+  guardrail: { text: string; nodeId: string };
   suggestions: (ws: { journeys: Journey[] }) => Suggestion[];
   /** Escala do volume de execuções diárias nas métricas. */
   dailyVolume: number;
@@ -703,7 +726,8 @@ function buildOrderFrom(ctx: Ctx, anchor: Journey): BuildOrder {
   };
 }
 
-function executionsFrom(ctx: Ctx, journeys: Journey[], channels: Channel[], guardrail: string): Execution[] {
+function executionsFrom(ctx: Ctx, journeys: Journey[], channels: Channel[], gr: { text: string; nodeId: string }): Execution[] {
+  const guardrail = gr.text;
   const r = ctx.rng;
   const [anchor, prdJ, auto] = journeys;
   const chOf = (j: Journey) =>
@@ -720,7 +744,8 @@ function executionsFrom(ctx: Ctx, journeys: Journey[], channels: Channel[], guar
     let guard: string | undefined;
     if (result === 'erro') cut = Math.max(1, path.findIndex((n) => n.category === 'dados') + 1) || path.length;
     if (result === 'bloqueado') {
-      const idx = path.findIndex((n) => n.category === 'guardrail' || n.category === 'logica');
+      let idx = path.findIndex((n) => n.id === gr.nodeId);
+      if (idx < 0) idx = path.findIndex((n) => n.category === 'guardrail' || n.category === 'logica');
       cut = idx >= 0 ? idx + 1 : path.length;
       guard = guardrail;
     }
@@ -781,7 +806,7 @@ function metricsFrom(ctx: Ctx, content: IndustryContent): MetricSeries[] {
     series(ctx, 'sucesso', 'operacao', 'Taxa de sucesso', '%', 'up', 86, 94.5, { noise: 0.01, decimals: 1 }),
     series(ctx, 'latencia-p95', 'operacao', 'Latência p95', 'ms', 'down', 4200, 2900, { noise: 0.07 }),
     series(ctx, 'transbordos', 'operacao', 'Transbordos', 'transbordos', 'down', v * 0.11, v * 0.06, { weekend: 0.6, noise: 0.1 }),
-    series(ctx, 'tokens', 'agentica', 'Tokens', 'tokens', 'down', v * 3100, v * 3600, { weekend: 0.62, noise: 0.06 }),
+    series(ctx, 'tokens', 'agentica', 'Tokens por execução', 'tokens', 'down', 3600, 3050, { noise: 0.05 }),
     series(ctx, 'custo-resolucao', 'agentica', 'Custo por resolução', 'R$', 'down', 0.41, 0.23, { noise: 0.05, decimals: 2 }),
     series(ctx, 'guardrails', 'agentica', 'Guardrails acionados', 'acionamentos', 'down', v * 0.03, v * 0.018, { weekend: 0.6, noise: 0.15 }),
     series(ctx, 'nota-avaliacao', 'agentica', 'Nota de avaliação', 'nota (0–5)', 'up', 3.9, 4.5, { noise: 0.015, decimals: 2 }),
@@ -819,7 +844,7 @@ function approvalsFrom(ctx: Ctx, d: { journeys: Journey[]; components: Component
   ];
 }
 
-function auditFrom(ctx: Ctx, d: { journeys: Journey[]; components: Component[]; contracts: DataContract[]; connectors: Connector[]; policies: Policy[]; initiatives: Initiative[]; decisionTables: DecisionTable[] }): AuditEvent[] {
+function auditFrom(ctx: Ctx, d: { journeys: Journey[]; components: Component[]; contracts: DataContract[]; connectors: Connector[]; policies: Policy[]; initiatives: Initiative[]; decisionTables: DecisionTable[]; hmlDays?: number }): AuditEvent[] {
   const r = ctx.rng;
   const [anchor, prdJ, auto] = d.journeys;
   const t: [ProfileId, string, string, EnvId][] = [
@@ -849,9 +874,12 @@ function auditFrom(ctx: Ctx, d: { journeys: Journey[]; components: Component[]; 
     ['coe', 'Ajustou limite de custo por execução', 'Limite de custo por execução', 'prd'],
     ['dono_negocio', 'Testou caso na tabela de decisão', d.decisionTables[0].name, 'dev'],
   ];
+  // Os três primeiros eventos acompanham as releases da jornada em Prd.
+  const fixed: [number, number, number][] = [[0, 8, 14], [0, 8, 15], [Math.max(1, (d.hmlDays ?? 4) - 1), 10, 20]];
   const ev = t.map(([profile, action, object, env], i) => {
-    const day = Math.min(13, Math.floor(i * 0.55 + r.next() * 1.5));
-    return { id: `${ctx.p}-au-${String(i + 1).padStart(3, '0')}`, at: ts(day, day === 0 ? r.int(6, 9) : r.int(8, 19), r.int(0, 59)), actor: ctx.u(profile), profile, action, object, env };
+    const day = Math.min(13, 1 + Math.floor(i * 0.5 + r.next() * 1.5));
+    const [dd, hh, mm] = fixed[i] ?? [day, r.int(8, 19), r.int(0, 59)];
+    return { id: `${ctx.p}-au-${String(i + 1).padStart(3, '0')}`, at: ts(dd, hh, mm), actor: ctx.u(profile), profile, action, object, env };
   });
   return ev.sort((a, b) => (a.at < b.at ? 1 : -1));
 }
@@ -931,7 +959,7 @@ export function assemble(ctx: Ctx, content: IndustryContent): WorkspaceData {
   const releases = releasesFrom(ctx, journeys, content.journeys);
   const buildOrders = [buildOrderFrom(ctx, journeys[0])];
   const approvals = approvalsFrom(ctx, { journeys, components, contracts: content.contracts, decisionTables: content.decisionTables });
-  const audit = auditFrom(ctx, { journeys, components, contracts: content.contracts, connectors: content.connectors, policies, initiatives: content.initiatives, decisionTables: content.decisionTables });
+  const audit = auditFrom(ctx, { journeys, components, contracts: content.contracts, connectors: content.connectors, policies, initiatives: content.initiatives, decisionTables: content.decisionTables, hmlDays: content.journeys[1].versions.find((v) => v.version === content.journeys[1].envVersions.hml)?.daysAgo });
   const executions = executionsFrom(ctx, journeys, content.channels, content.guardrail);
   const metrics = metricsFrom(ctx, content);
   const [cockpit, cockpitBefore] = cockpitFrom(ctx, { initiatives: content.initiatives, kpis: content.kpis, coverage: content.coverage, connectors: content.connectors, approvals, components });

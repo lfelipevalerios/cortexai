@@ -105,11 +105,14 @@ try {
     console.log(`  OC ${o.id} | jornada ${o.journeyId} v${o.journeyVersion} | status ${o.status} | progresso ${ordem.progresso.construidos}/${ordem.progresso.total}`);
     console.log(`  regras: ${ordem.especificacaoFuncional?.regras.length ?? 0} | contratos: ${ordem.contratos.length} | casos de teste: ${ordem.casosDeTeste.length}`);
     const plano = parse(await client.callTool({ name: 'registrar_plano', arguments: { ordemId: o.id, passos: ['Implementar gatilho', 'Implementar agente', 'Testes'] } }));
-    check(plano.status === 'plano_registrado', `registrar_plano → ${plano.status}`);
-    const nodeId = ordem.progresso.pendentes[0] ?? ordem.grafo?.nodes?.[0]?.id;
-    const pg = parse(await client.callTool({ name: 'registrar_progresso', arguments: { ordemId: o.id, nodeId, nota: 'smoke' } }));
+    check(plano.status === 'plano_registrado', `registrar_plano → ${plano.ordemId} ${plano.status}${plano.aviso ? ` (${plano.aviso})` : ''}`);
+    const oid = plano.ordemId; // pode ser uma nova rodada se a OC já estava concluída
+    const nodeId = ordem.grafo?.nodes?.[0]?.id;
+    const pg = parse(await client.callTool({ name: 'registrar_progresso', arguments: { ordemId: oid, nodeId, nota: 'smoke' } }));
     check(pg.estado === 'construido', `registrar_progresso ${nodeId} → ${pg.progresso?.construidos}/${pg.progresso?.total} (status ${pg.status})`);
-    const bad = await client.callTool({ name: 'registrar_progresso', arguments: { ordemId: o.id, nodeId: 'no-que-nao-existe' } });
+    const ev = parse(await client.callTool({ name: 'registrar_evidencia', arguments: { ordemId: oid, tipo: 'testes', evidencia: '3/3 testes (smoke)' } }));
+    check(ev.evidencias?.length === 1, `registrar_evidencia → ${ev.evidencias?.length} evidência(s)`);
+    const bad = await client.callTool({ name: 'registrar_progresso', arguments: { ordemId: oid, nodeId: 'no-que-nao-existe' } });
     check(bad.isError === true, 'registrar_progresso rejeita nó inexistente');
   }
 

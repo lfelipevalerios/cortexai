@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "cortex": {
+      "type": "http",
+      "url": "${CORTEX_MCP_URL:-http://localhost:8787/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${CORTEX_TOKEN:-ctx_ws-telecom_dev_demo}"
+      }
+    }
+  }
+}

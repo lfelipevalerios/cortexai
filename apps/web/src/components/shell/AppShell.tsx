@@ -46,6 +46,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <div className="flex h-screen items-center justify-center text-sm text-text-muted">Carregando o Córtex…</div>;
   }
 
+  // Notas do apresentador abrem numa segunda janela, sem a casca.
+  if (pathname.startsWith('/notas')) return <>{children}</>;
+
   const picking = pathname === '/' || !wsId;
 
   return (

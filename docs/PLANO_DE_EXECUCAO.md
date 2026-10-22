@@ -30,7 +30,7 @@ cortexai/
 | Canvas e grafos | React Flow (`@xyflow/react`) com arestas ortogonais (`smoothstep`) | Studio, linhagem, domínios e ecossistema |
 | Gráficos | Apache ECharts | Tema escuro com séries verde/roxo |
 | Estado | Zustand com persistência local | Estado da demo sobrevive a recarregar e tem "Restaurar demo" |
-| Modo demonstração | `MockCortexApi` em memória implementando a interface `CortexApi` | **Desvio:** no lugar do MSW, um adaptador em processo com o mesmo contrato. Trocar pelo cliente HTTP do modo conectado não muda telas |
+| Modo demonstração | Store Zustand sobre o `WorkspaceData` de `packages/schemas`, persistido no navegador | **Desvio:** sem MSW. O contrato comum é o modelo de dados; o cliente HTTP do modo conectado ainda precisa ser escrito atrás do mesmo store |
 | MCP | `@modelcontextprotocol/sdk`, HTTP | Lê `packages/seed`, igual à aplicação |
 | Backend conectado (`apps/api`) | Fora desta entrega | Onda futura (NestJS + PostgreSQL + pgvector) |
 
@@ -113,8 +113,8 @@ Legenda: ✅ entregue nesta etapa · 🟡 parcial (simulado na demo) · ⏳ pró
 | 9 capítulos, 4 roteiros (Completo, Executivo, Técnico, por indústria) | ✅ |
 | Narrador, destaque, avanço por teclado, pontos de restauração, "Restaurar demo" | ✅ |
 | Modo apresentação com barra de capítulos | ✅ |
-| Notas do apresentador em segunda janela | ⏳ |
-| Piloto automático completo em todos os passos | 🟡 navegação e ações principais |
+| Notas do apresentador em segunda janela (`/notas`) | ✅ |
+| Piloto automático em todos os passos | ✅ verificado do capítulo 2 ao 8 no workspace de telecom |
 | Revisão de acessibilidade, curadoria por indústria e ensaio | ⏳ humano |
 
 ## 4. Sequência de execução usada
@@ -124,14 +124,22 @@ Legenda: ✅ entregue nesta etapa · 🟡 parcial (simulado na demo) · ⏳ pró
 3. Em paralelo, sobre seed e casca: um bloco por grupo de módulos (Visão, Cérebro, Studio, Ambientes/Canais/IDEs, Conectores, Dados/Conhecimento, Governança/Telemetria).
 4. Integração, build estático, teste de fumaça no navegador e push para `pre-prod`.
 
-## 5. Próximas etapas
+## 5. Verificação feita nesta entrega
 
-1. `apps/api` (NestJS + PostgreSQL + pgvector) implementando a mesma interface `CortexApi`; conector PostgreSQL real.
-2. Ensaio da prova de viabilidade (seção 9): instalar o plugin, conectar o MCP e rodar `/cortex:construir` sobre a jornada-âncora de telecom.
-3. Notas do apresentador em segunda janela e piloto automático completo.
+- `next build` limpo: 18 rotas estáticas; checagem de tipos sem erros.
+- Testes do motor (`packages/engine/scripts/test.ts`): 16 passando. Checagem do seed (`packages/seed/scripts/check.ts`): integridade, determinismo e padrões da demo.
+- Teste de fumaça do servidor MCP (`apps/mcp-server/scripts/smoke.ts`) contra o seed real.
+- Navegador (telecom): os 14 módulos abrem sem erro de console; fluxo manual Testar → guardrail de PII → corrigir → Dev→Hml → Prd bloqueado → aprovação do dono → Prd; jornada guiada com piloto automático do capítulo 2 ao 8 sem intervenção.
+- Não verificado: os outros 3 workspaces pela jornada guiada completa, e o Claude Code construindo uma OC de verdade (exige a licença do usuário).
+
+## 6. Próximas etapas
+
+1. `apps/api` (NestJS + PostgreSQL + pgvector) implementando o mesmo contrato do modo demonstração; conector PostgreSQL real.
+2. Ensaio da prova de viabilidade (seção 9): instalar o plugin, conectar o MCP e rodar `/cortex:construir` sobre a jornada-âncora de telecom. Hoje o MCP guarda estado próprio; a OC criada na web não aparece nele até existir o backend.
+3. Rodar a jornada guiada completa nos workspaces de saúde, varejo e financeiro.
 4. Curadoria por indústria e checagem de nomes fictícios contra marcas existentes.
-5. Publicação em Azure Static Web Apps (web) e Azure Container Apps (MCP).
+5. Publicação: Render (site estático, `render.yaml`) já configurado; MCP em um serviço Node separado.
 
-## 6. Riscos acompanhados
+## 7. Riscos acompanhados
 
 Os mesmos da seção 17 do documento-fonte. Mitigação já aplicada nesta etapa: demo 100% offline com estado restaurável e roteiros em configuração.

@@ -2,7 +2,6 @@
 // mutados pelas ferramentas de escrita, mais o log de eventos e a telemetria.
 import { randomUUID } from 'node:crypto';
 import type { EnvId, WorkspaceData } from '@cortex/schemas';
-import { generateWorkspaces } from '@cortex/seed';
 
 export interface Scope {
   workspaceId: string;
@@ -44,18 +43,20 @@ export interface ItsmStory {
   createdBy: string;
 }
 
-function loadWorkspaces(): WorkspaceData[] {
+// Import dinâmico: se o seed estiver quebrado ou incompleto, o servidor sobe vazio em vez de cair.
+async function loadWorkspaces(): Promise<WorkspaceData[]> {
   try {
-    const data = generateWorkspaces();
+    const seed = await import('@cortex/seed');
+    const data = seed.generateWorkspaces();
     return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.error('[cortex-mcp] falha ao gerar workspaces do seed:', err);
+    console.error('[cortex-mcp] falha ao carregar o seed (@cortex/seed); seguindo com workspaces vazios:', err instanceof Error ? err.message : err);
     return [];
   }
 }
 
 const workspaces = new Map<string, WorkspaceData>();
-for (const ws of loadWorkspaces()) workspaces.set(ws.workspace.id, ws);
+for (const ws of await loadWorkspaces()) workspaces.set(ws.workspace.id, ws);
 /** Ids vindos do seed (os vazios criados sob demanda por wsOf não contam). */
 const seededIds = new Set(workspaces.keys());
 

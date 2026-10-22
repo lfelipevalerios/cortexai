@@ -34,7 +34,7 @@ function findOrigin(ws: WorkspaceData, query: string, fallback: Origin): Origin 
   for (const p of ws.policies.filter((p) => p.active)) {
     cands.push({ o: { tipo: 'politica', id: p.id, nome: p.name }, s: score(query, `${p.description} ${p.condition} ${p.code}`, p.name) + 0.2 });
   }
-  for (const c of ws.components.filter((c) => c.type === 'rule' && c.status !== 'depreciado')) {
+  for (const c of ws.components.filter((c) => (c.type === 'rule' || c.type === 'hook') && c.status !== 'depreciado')) {
     cands.push({ o: { tipo: 'regra', id: c.id, nome: c.name }, s: score(query, `${c.description} ${c.content}`, c.name) + 0.1 });
   }
   const techAreas = new Set(ws.brainAreas.filter((a) => a.side === 'tecnico').map((a) => a.id));
@@ -73,8 +73,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function validate(ws: WorkspaceData, input: { codigo?: string; descricao?: string; caminhoArquivo?: string }) {
   const violations: Violation[] = [];
   const piiFallback: Origin = { tipo: 'padrao_cortex', id: 'cortex-lgpd-pii', nome: 'LGPD: dado pessoal só sai mascarado (padrão Córtex)' };
-  const piiOrigin = findOrigin(ws, 'pii dado pessoal cpf email mascarar lgpd log resposta', piiFallback);
-  const secretOrigin = findOrigin(ws, 'segredo credencial cofre secret token chave senha', {
+  const piiOrigin = findOrigin(ws, 'mascarar pii cpf lgpd', piiFallback);
+  const secretOrigin = findOrigin(ws, 'segredos cofre credencial', {
     tipo: 'padrao_cortex', id: 'cortex-segredos-cofre', nome: 'Segredos só por referência ao cofre (padrão Córtex)',
   });
   const sqlOrigin = findOrigin(ws, 'sql consulta parametrizada injecao query', {
